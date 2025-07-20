@@ -1,0 +1,40 @@
+# Tests
+tests/
+**/*.spec.ts
+**/*.test.ts
+
+# Build artifacts
+build/
+dist/
+*.wasm
+
+# Assembly files
+assembly/
+
+# Scripts
+scripts/
+
+# Documentation
+*.md
+!README.md
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies at root level
+node_modules/
+package.json
+package-lock.json
+tsconfig.json
+
+# Keep only front-end
+!front-end/

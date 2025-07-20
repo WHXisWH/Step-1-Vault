@@ -1,0 +1,31 @@
+{
+  "name": "step-1-vault",
+  "version": 2,
+  "buildCommand": "cd front-end && npm install && npm run build",
+  "outputDirectory": "front-end/dist",
+  "installCommand": "cd front-end && npm install",
+  "framework": "vite",
+  "env": {
+    "VITE_VAULT_ADDRESS": "",
+    "VITE_ORACLE_ADDRESS": "",
+    "VITE_STRATEGY_ADDRESS": "",
+    "VITE_EXECUTOR_ADDRESS": "",
+    "VITE_GOVERNANCE_ADDRESS": "",
+    "VITE_DEX_ADDRESS": ""
+  },
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "credentialless"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        }
+      ]
+    }
+  ]
+}
