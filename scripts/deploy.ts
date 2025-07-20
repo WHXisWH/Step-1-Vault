@@ -3,154 +3,160 @@ import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   Account,
-  Args,
   SmartContract,
   JsonRpcProvider,
-  Mas,
-  U128
+  Mas
 } from '@massalabs/massa-web3';
-
-const DEPLOY_CONFIG = {
-  gasLimit: 10_000_000n,
-  coins: Mas.fromString('1'),
-  fee: Mas.fromString('0.01')
-};
-
-async function deployContract(
-  provider: JsonRpcProvider,
-  contractName: string,
-  constructorArgs: Args
-): Promise<string> {
-  console.log(`\nDeploying ${contractName}...`);
-  
-  const wasmPath = resolve(__dirname, `../build/contracts/${contractName}.wasm`);
-  const bytecode = readFileSync(wasmPath);
-  
-  const op = await SmartContract.deploy(
-    provider,
-    bytecode,
-    constructorArgs,
-    DEPLOY_CONFIG
-  );
-
-  await op.waitFinalExecution();
-  
-  console.log(`${contractName} deployed at: ${op.getDeployedAddress()}`);
-  return op.getDeployedAddress();
-}
 
 async function main() {
   console.log('Step-1 Vault Deployment Script');
   console.log('==============================');
   
+
   const account = await Account.fromEnv();
   const provider = JsonRpcProvider.buildnet(account);
   
   console.log(`Deploying from account: ${account.address.toString()}`);
   
+
   const balance = await provider.balance(true);
   console.log(`Account balance: ${Mas.toString(balance)} MAS`);
   
   const addresses: Record<string, string> = {};
-  const isDev = process.env.DEV_MODE === 'true';
   
-  const temporaryOwner = account.address.toString();
-  const temporaryMultisig = account.address.toString();
-  const initialPrice = 1_000_000n;
+
+  console.log('\nDeploying Vault contract...');
+  const vaultBytecode = readFileSync('./build/Vault.wasm');
   
-  if (isDev) {
-    addresses.oracle = await deployContract(
+  try {
+    const vaultContract = await SmartContract.deploy(
       provider,
-      'PriceOracle',
-      new Args()
-        .addString(temporaryOwner)
-        .addU64(initialPrice)
+      vaultBytecode,
+      new Uint8Array(0),
+      {
+        coins: Mas.fromString('1'),
+        fee: Mas.fromString('0.01')
+      }
     );
     
-    addresses.dex = await deployContract(
-      provider,
-      'SimpleDEX',
-      new Args()
-        .addString(addresses.oracle)
-        .addU128(U128.from(1_000_000_000n)) 
-        .addU128(U128.from(1_000_000_000n))
-    );
-    
-    const oracleContract = new SmartContract(provider, addresses.oracle);
-    const op = await oracleContract.call('constructor', 
-      new Args()
-        .addString(addresses.dex)
-        .addU64(initialPrice)
-    );
-    await op.waitFinalExecution();
-  } else {
-    addresses.oracle = process.env.ORACLE_ADDRESS || '';
-    addresses.dex = process.env.DEX_ADDRESS || '';
-    
-    if (!addresses.oracle || !addresses.dex) {
-      throw new Error('ORACLE_ADDRESS and DEX_ADDRESS must be set in production mode');
-    }
+    addresses.vault = vaultContract.address;
+    console.log(`✅ Vault deployed at: ${addresses.vault}`);
+  } catch (error) {
+    console.error('Failed to deploy Vault:', error);
+    throw error;
   }
   
-  addresses.governance = await deployContract(
-    provider,
-    'Governance',
-    new Args()
-      .addString(temporaryOwner)
-      .addString(temporaryMultisig)
-  );
+
+  console.log('\nDeploying PriceOracle contract...');
+  const oracleBytecode = readFileSync('./build/PriceOracle.wasm');
   
-  addresses.vault = await deployContract(
-    provider,
-    'Vault',
-    new Args()
-      .addString(temporaryOwner)
-      .addString(temporaryOwner)
-      .addString(temporaryOwner)
-  );
+  try {
+    const oracleContract = await SmartContract.deploy(
+      provider,
+      oracleBytecode,
+      new Uint8Array(0),
+      {
+        coins: Mas.fromString('1'),
+        fee: Mas.fromString('0.01')
+      }
+    );
+    
+    addresses.oracle = oracleContract.address;
+    console.log(`✅ PriceOracle deployed at: ${addresses.oracle}`);
+  } catch (error) {
+    console.error('Failed to deploy PriceOracle:', error);
+    throw error;
+  }
+
+
+  console.log('\nDeploying Governance contract...');
+  const governanceBytecode = readFileSync('./build/Governance.wasm');
   
-  addresses.executor = await deployContract(
-    provider,
-    'TradeExecutor',
-    new Args()
-      .addString(temporaryOwner)
-      .addString(temporaryOwner)
-      .addString(addresses.vault)
-      .addString(addresses.dex)
-  );
+  try {
+    const governanceContract = await SmartContract.deploy(
+      provider,
+      governanceBytecode,
+      new Uint8Array(0),
+      {
+        coins: Mas.fromString('1'),
+        fee: Mas.fromString('0.01')
+      }
+    );
+    
+    addresses.governance = governanceContract.address;
+    console.log(`✅ Governance deployed at: ${addresses.governance}`);
+  } catch (error) {
+    console.error('Failed to deploy Governance:', error);
+    throw error;
+  }
+
+
+  console.log('\nDeploying StrategyEngine contract...');
+  const strategyBytecode = readFileSync('./build/StrategyEngine.wasm');
   
-  addresses.strategy = await deployContract(
-    provider,
-    'StrategyEngine',
-    new Args()
-      .addString(temporaryOwner)
-      .addString(addresses.oracle)
-      .addString(addresses.executor)
-  );
+  try {
+    const strategyContract = await SmartContract.deploy(
+      provider,
+      strategyBytecode,
+      new Uint8Array(0),
+      {
+        coins: Mas.fromString('1'),
+        fee: Mas.fromString('0.01')
+      }
+    );
+    
+    addresses.strategy = strategyContract.address;
+    console.log(`✅ StrategyEngine deployed at: ${addresses.strategy}`);
+  } catch (error) {
+    console.error('Failed to deploy StrategyEngine:', error);
+    throw error;
+  }
+
+
+  console.log('\nDeploying TradeExecutor contract...');
+  const executorBytecode = readFileSync('./build/TradeExecutor.wasm');
   
-  console.log('\nUpdating contract references...');
+  try {
+    const executorContract = await SmartContract.deploy(
+      provider,
+      executorBytecode,
+      new Uint8Array(0),
+      {
+        coins: Mas.fromString('1'),
+        fee: Mas.fromString('0.01')
+      }
+    );
+    
+    addresses.executor = executorContract.address;
+    console.log(`✅ TradeExecutor deployed at: ${addresses.executor}`);
+  } catch (error) {
+    console.error('Failed to deploy TradeExecutor:', error);
+    throw error;
+  }
+  console.log('\nDeploying SimpleDEX contract...');
+  const dexBytecode = readFileSync('./build/SimpleDEX.wasm');
   
-  const vaultContract = new SmartContract(provider, addresses.vault);
-  let op = await vaultContract.call('constructor',
-    new Args()
-      .addString(temporaryOwner)
-      .addString(addresses.strategy)
-      .addString(addresses.executor)
-  );
-  await op.waitFinalExecution();
+  try {
+    const dexContract = await SmartContract.deploy(
+      provider,
+      dexBytecode,
+      new Uint8Array(0),
+      {
+        coins: Mas.fromString('1'),
+        fee: Mas.fromString('0.01')
+      }
+    );
+    
+    addresses.dex = dexContract.address;
+    console.log(`✅ SimpleDEX deployed at: ${addresses.dex}`);
+  } catch (error) {
+    console.error('Failed to deploy SimpleDEX:', error);
+    throw error;
+  }
   
-  const executorContract = new SmartContract(provider, addresses.executor);
-  op = await executorContract.call('constructor',
-    new Args()
-      .addString(temporaryOwner)
-      .addString(addresses.strategy)
-      .addString(addresses.vault)
-      .addString(addresses.dex)
-  );
-  await op.waitFinalExecution();
-  
+
   writeFileSync(
-    resolve(__dirname, '../addresses.json'),
+    resolve(process.cwd(), 'addresses.json'),
     JSON.stringify(addresses, null, 2)
   );
   
@@ -158,10 +164,16 @@ async function main() {
   console.log('\nContract addresses saved to addresses.json:');
   console.log(JSON.stringify(addresses, null, 2));
   
-  console.log('\n⚠️  Important: Update the owner and multisig addresses through governance!');
+  console.log('\n📝 Next steps:');
+  console.log('1. Test contracts: npm run interact info');
+  console.log('2. Make a deposit: npm run interact deposit 1');
 }
 
 main().catch(error => {
-  console.error('Deployment failed:', error);
+  console.error('❌ Deployment failed:', error);
+  console.error('\n💡 Troubleshooting tips:');
+  console.error('1. Check if your PRIVATE_KEY is correct in .env file');
+  console.error('2. Make sure you have enough MAS for deployment fees');
+  console.error('3. Check the contract bytecode exists in build/ directory');
   process.exit(1);
 });

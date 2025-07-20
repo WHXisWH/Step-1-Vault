@@ -1,136 +1,60 @@
-import { Args, stringToBytes } from "@massalabs/as-types";
-import { Storage, Context, generateEvent } from "@massalabs/massa-as-sdk";
-import { 
-  STORAGE_KEYS, 
-  ERROR_MESSAGES 
-} from "../utils/Constants";
-import {
-  requireAuth,
-  getString,
-  setString,
-  emitEvent
-} from "../utils/Helpers";
+import { generateEvent, Storage, Context } from '@massalabs/massa-as-sdk';
+import { stringToBytes, bytesToString } from '@massalabs/as-types';
 
-export function constructor(argsData: StaticArray<u8>): void {
+const OWNER_KEY = stringToBytes('OWNER');
+const PAUSED_KEY = stringToBytes('PAUSED');
+
+export function constructor(_: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
   
-  const args = new Args(argsData);
-  const owner = args.nextString().expect("Owner address required");
-  const daoMultisig = args.nextString().expect("DAO multisig address required");
+  const owner = Context.caller().toString();
+  Storage.set(OWNER_KEY, stringToBytes(owner));
   
-  setString(STORAGE_KEYS.OWNER, owner);
-  setString(STORAGE_KEYS.DAO_MULTISIG, daoMultisig);
-}
-
-export function transferOwnership(argsData: StaticArray<u8>): void {
-  const owner = getString(STORAGE_KEYS.OWNER);
-  requireAuth(owner);
-  
-  const args = new Args(argsData);
-  const newOwner = args.nextString().expect("New owner address required");
-  
-  setString(STORAGE_KEYS.OWNER, newOwner);
-  
-  const eventData = new Map<string, string>();
-  eventData.set("previousOwner", owner);
-  eventData.set("newOwner", newOwner);
-  emitEvent("OwnershipTransferred", eventData);
-}
-
-export function updateDaoMultisig(argsData: StaticArray<u8>): void {
-  const daoMultisig = getString(STORAGE_KEYS.DAO_MULTISIG);
-  requireAuth(daoMultisig);
-  
-  const args = new Args(argsData);
-  const newMultisig = args.nextString().expect("New multisig address required");
-  
-  setString(STORAGE_KEYS.DAO_MULTISIG, newMultisig);
-  
-  const eventData = new Map<string, string>();
-  eventData.set("previousMultisig", daoMultisig);
-  eventData.set("newMultisig", newMultisig);
-  emitEvent("MultisigUpdated", eventData);
+  generateEvent('Governance deployed');
 }
 
 export function pause(_: StaticArray<u8>): void {
-  const owner = getString(STORAGE_KEYS.OWNER);
-  const daoMultisig = getString(STORAGE_KEYS.DAO_MULTISIG);
+  const owner = bytesToString(Storage.get(OWNER_KEY));
   const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can pause");
   
-  assert(caller == owner || caller == daoMultisig, ERROR_MESSAGES.UNAUTHORIZED);
+  Storage.set(PAUSED_KEY, stringToBytes('true'));
   
-  Storage.set(stringToBytes(STORAGE_KEYS.PAUSED), new StaticArray<u8>(1));
-  
-  const eventData = new Map<string, string>();
-  eventData.set("paused", "true");
-  eventData.set("pausedBy", caller);
-  eventData.set("timestamp", Context.timestamp().toString());
-  emitEvent("Paused", eventData);
+  generateEvent('System paused');
 }
 
 export function unpause(_: StaticArray<u8>): void {
-  const daoMultisig = getString(STORAGE_KEYS.DAO_MULTISIG);
-  requireAuth(daoMultisig);
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can unpause");
   
-  Storage.del(stringToBytes(STORAGE_KEYS.PAUSED));
+  Storage.del(PAUSED_KEY);
   
-  const eventData = new Map<string, string>();
-  eventData.set("paused", "false");
-  eventData.set("timestamp", Context.timestamp().toString());
-  emitEvent("Unpaused", eventData);
-}
-
-export function updateContractAddress(argsData: StaticArray<u8>): void {
-  const daoMultisig = getString(STORAGE_KEYS.DAO_MULTISIG);
-  requireAuth(daoMultisig);
-  
-  const args = new Args(argsData);
-  const contractType = args.nextString().expect("Contract type required");
-  const newAddress = args.nextString().expect("New address required");
-  
-  let storageKey: string = "";
-  if (contractType == "strategy") {
-    storageKey = STORAGE_KEYS.STRATEGY_ADDRESS;
-  } else if (contractType == "executor") {
-    storageKey = STORAGE_KEYS.EXECUTOR_ADDRESS;
-  } else if (contractType == "oracle") {
-    storageKey = STORAGE_KEYS.ORACLE_ADDRESS;
-  } else if (contractType == "dex") {
-    storageKey = STORAGE_KEYS.DEX_ADDRESS;
-  } else {
-    assert(false, "Invalid contract type");
-  }
-  
-  const previousAddress = getString(storageKey);
-  setString(storageKey, newAddress);
-  
-  const eventData = new Map<string, string>();
-  eventData.set("contractType", contractType);
-  eventData.set("previousAddress", previousAddress);
-  eventData.set("newAddress", newAddress);
-  emitEvent("ContractUpdated", eventData);
-}
-
-export function getOwner(_: StaticArray<u8>): StaticArray<u8> {
-  const owner = getString(STORAGE_KEYS.OWNER);
-  
-  const result = new Args();
-  result.add(owner);
-  return result.serialize();
-}
-
-export function getDaoMultisig(_: StaticArray<u8>): StaticArray<u8> {
-  const multisig = getString(STORAGE_KEYS.DAO_MULTISIG);
-  
-  const result = new Args();
-  result.add(multisig);
-  return result.serialize();
+  generateEvent('System unpaused');
 }
 
 export function isPaused(_: StaticArray<u8>): StaticArray<u8> {
-  const paused = Storage.has(stringToBytes(STORAGE_KEYS.PAUSED));
+  const paused = Storage.has(PAUSED_KEY);
   
-  const result = new Args();
-  result.add(paused);
-  return result.serialize();
+  if (paused) {
+    return stringToBytes('true');
+  } else {
+    return stringToBytes('false');
+  }
+}
+
+export function getOwner(_: StaticArray<u8>): StaticArray<u8> {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  return stringToBytes(owner);
+}
+
+export function transferOwnership(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can transfer ownership");
+  
+  const newOwner = bytesToString(argsData);
+  Storage.set(OWNER_KEY, stringToBytes(newOwner));
+  
+  generateEvent('Ownership transferred');
 }

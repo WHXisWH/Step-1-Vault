@@ -3,39 +3,38 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
   Account,
-  Args,
   SmartContract,
   JsonRpcProvider,
-  Mas,
-  U128,
-  bytesToStr
+  Mas
 } from '@massalabs/massa-web3';
 
 async function main() {
   console.log('Step-1 Vault Interaction Script');
-  console.log('==============================\n');
+  console.log('===============================\n');
   
   const account = await Account.fromEnv();
   const provider = JsonRpcProvider.buildnet(account);
   
-  const addresses = JSON.parse(
-    readFileSync(resolve(__dirname, '../addresses.json'), 'utf-8')
-  );
+  const addressesFile = readFileSync(resolve(process.cwd(), 'addresses.json'), 'utf-8');
+  const addresses = JSON.parse(addressesFile);
   
   const vaultContract = new SmartContract(provider, addresses.vault);
-  const strategyContract = new SmartContract(provider, addresses.strategy);
-  const oracleContract = new SmartContract(provider, addresses.oracle);
+  const dexContract = new SmartContract(provider, addresses.dex);
+  const oracleContract = addresses.oracle ? new SmartContract(provider, addresses.oracle) : null;
+  const governanceContract = addresses.governance ? new SmartContract(provider, addresses.governance) : null;
+  const strategyContract = addresses.strategy ? new SmartContract(provider, addresses.strategy) : null;
+  const executorContract = addresses.executor ? new SmartContract(provider, addresses.executor) : null;
   
   const action = process.argv[2];
   
   switch (action) {
     case 'deposit': {
-      const amount = Mas.fromString(process.argv[3] || '100');
+      const amount = Mas.fromString(process.argv[3] || '1');
       console.log(`Depositing ${Mas.toString(amount)} MAS...`);
       
       const op = await vaultContract.call(
         'deposit',
-        new Args().addU64(BigInt(amount)),
+        new Uint8Array(0),  // no args needed
         { coins: amount }
       );
       
@@ -48,9 +47,12 @@ async function main() {
       const shares = BigInt(process.argv[3] || '100');
       console.log(`Withdrawing ${shares} shares...`);
       
+      const sharesBytes = new ArrayBuffer(8);
+      new DataView(sharesBytes).setBigUint64(0, shares, true);
+      
       const op = await vaultContract.call(
         'withdraw',
-        new Args().addU64(shares)
+        new Uint8Array(sharesBytes)
       );
       
       await op.waitFinalExecution();
@@ -58,126 +60,93 @@ async function main() {
       break;
     }
     
-    case 'start-strategy': {
-      console.log('Starting automated strategy...');
+    case 'balance': {
+      const user = process.argv[3] || account.address.toString();
+      console.log(`Checking balance for ${user}...`);
       
-      const op = await strategyContract.call(
-        'startStrategy',
-        new Args().serialize()
-      );
+      const userBytes = new TextEncoder().encode(user);
+      const result = await vaultContract.read('balanceOf', userBytes);
       
-      await op.waitFinalExecution();
-      console.log('✅ Strategy started!');
-      break;
-    }
-    
-    case 'stop-strategy': {
-      console.log('Stopping automated strategy...');
-      
-      const op = await strategyContract.call(
-        'stopStrategy',
-        new Args().serialize()
-      );
-      
-      await op.waitFinalExecution();
-      console.log('✅ Strategy stopped!');
+      const shares = new DataView(result.value.buffer).getBigUint64(0, true);
+      console.log(`User shares: ${shares}`);
       break;
     }
     
     case 'info': {
-      console.log('Fetching vault information...\n');
+      console.log('Fetching all contract information...\n');
       
-      const totalAssetsResult = await vaultContract.read('totalAssets');
-      const totalAssets = new Args(totalAssetsResult.value).nextU128().unwrap();
+
+      const assetsResult = await vaultContract.read('totalAssets', new Uint8Array(0));
+      const totalAssets = new DataView(assetsResult.value.buffer).getBigUint64(0, true);
+
+      const priceResult = await dexContract.read('getPrice', new Uint8Array(0));
+      const dexPrice = new DataView(priceResult.value.buffer).getBigUint64(0, true);
       
-      const totalSharesResult = await vaultContract.read('totalShares');
-      const totalShares = new Args(totalSharesResult.value).nextU128().unwrap();
+      console.log('=== Contract Information ===');
+      console.log(`📊 Vault Total Assets: ${totalAssets}`);
+      console.log(`💱 DEX Price: ${Number(dexPrice) / 1_000_000}`);
       
-      const sharePriceResult = await vaultContract.read('sharePrice');
-      const sharePrice = new Args(sharePriceResult.value).nextU64().unwrap();
+      if (oracleContract) {
+        try {
+          const oraclePriceResult = await oracleContract.read('getPrice', new Uint8Array(0));
+          const oraclePrice = new DataView(oraclePriceResult.value.buffer).getBigUint64(0, true);
+          console.log(`🔮 Oracle Price: ${Number(oraclePrice) / 1_000_000}`);
+        } catch (e) {
+          console.log(`🔮 Oracle: Deployed but not readable`);
+        }
+      }
       
-      const twapResult = await oracleContract.read('getTwap');
-      const twap = new Args(twapResult.value).nextU64().unwrap();
+      if (strategyContract) {
+        try {
+          const activeResult = await strategyContract.read('isStrategyActive', new Uint8Array(0));
+          const isActive = new TextDecoder().decode(activeResult.value);
+          console.log(`⚡ Strategy Active: ${isActive}`);
+        } catch (e) {
+          console.log(`⚡ Strategy: Deployed but not readable`);
+        }
+      }
       
-      console.log('Vault Information:');
-      console.log('==================');
-      console.log(`Total Assets: ${totalAssets.toString()}`);
-      console.log(`Total Shares: ${totalShares.toString()}`);
-      console.log(`Share Price: ${Number(sharePrice) / 1_000_000}`);
-      console.log(`Current TWAP: ${Number(twap) / 1_000_000}`);
+      console.log('\n=== Contract Addresses ===');
+      Object.entries(addresses).forEach(([name, addr]) => {
+        console.log(`${name}: ${addr}`);
+      });
       break;
     }
     
-    case 'balance': {
-      const user = process.argv[3] || account.address.toString();
-      console.log(`Checking balance for ${user}...\n`);
+    case 'swap': {
+      const direction = process.argv[3] || 'true';  // true = buy A
+      const amountIn = process.argv[4] || '1000000';  // 1M units
+      const minOut = process.argv[5] || '900000';     // 0.9M min out
       
-      const sharesResult = await vaultContract.read(
-        'balanceOfShares',
-        new Args().addString(user)
-      );
-      const shares = new Args(sharesResult.value).nextU128().unwrap();
+      console.log(`Swapping ${amountIn} units (buy A: ${direction})...`);
       
-      console.log(`User Shares: ${shares.toString()}`);
-      
-      if (shares > U128.Zero) {
-        const totalAssetsResult = await vaultContract.read('totalAssets');
-        const totalAssets = new Args(totalAssetsResult.value).nextU128().unwrap();
-        
-        const totalSharesResult = await vaultContract.read('totalShares');
-        const totalShares = new Args(totalSharesResult.value).nextU128().unwrap();
-        
-        const userValue = shares.mul(totalAssets).div(totalShares);
-        console.log(`Estimated Value: ${userValue.toString()}`);
-      }
-      break;
-    }
-    
-    case 'simulate-price': {
-      if (!addresses.dex) {
-        console.error('❌ DEX not deployed in production mode');
-        break;
-      }
-      
-      const direction = process.argv[3] || 'up';
-      const magnitude = BigInt(process.argv[4] || '10');
-      
-      console.log(`Simulating price movement ${direction} by ${magnitude}%...`);
-      
-      const dexContract = new SmartContract(provider, addresses.dex);
-      
-      const swapAmount = 1_000_000n;
-      const isBuyingA = direction === 'up';
+      const swapArgs = `${direction}|${amountIn}|${minOut}`;
+      const argsBytes = new TextEncoder().encode(swapArgs);
       
       const op = await dexContract.call(
         'swap',
-        new Args()
-          .addBool(isBuyingA)
-          .addU64(swapAmount)
-          .addU64(0n),
-        { coins: Mas.fromString('1') }
+        argsBytes,
+        { coins: Mas.fromString('0.1') }  // some coins for the swap
       );
       
       await op.waitFinalExecution();
-      console.log('✅ Price simulation complete!');
+      console.log('✅ Swap successful!');
       break;
     }
     
     default: {
       console.log('Usage: npm run interact <command> [args]');
       console.log('\nCommands:');
-      console.log('  deposit <amount>     - Deposit MAS into vault');
-      console.log('  withdraw <shares>    - Withdraw shares from vault');
-      console.log('  start-strategy       - Start automated strategy');
-      console.log('  stop-strategy        - Stop automated strategy');
-      console.log('  info                 - Show vault information');
-      console.log('  balance [address]    - Check user balance');
-      console.log('  simulate-price <up|down> [%] - Simulate price movement (dev only)');
+      console.log('  deposit <amount>        - Deposit MAS into vault');
+      console.log('  withdraw <shares>       - Withdraw shares from vault');
+      console.log('  balance [address]       - Check user balance');
+      console.log('  info                    - Show vault and DEX information');
+      console.log('  swap <buy_a> <in> <min> - Execute a swap on DEX');
     }
   }
 }
 
 main().catch(error => {
-  console.error('Interaction failed:', error);
+  console.error('❌ Interaction failed:', error);
   process.exit(1);
 });

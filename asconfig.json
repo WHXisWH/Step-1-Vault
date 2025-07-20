@@ -1,29 +1,21 @@
 {
   "targets": {
     "release": {
-      "outDir": "./build/contracts",
+      "sourceMap": true,
       "optimizeLevel": 3,
+      "shrinkLevel": 3,
       "converge": true,
-      "noAssert": false
-    },
-    "debug": {
-      "outDir": "./build/contracts",
-      "optimizeLevel": 0,
-      "converge": false,
-      "noAssert": false
+      "noAssert": false,
+      "exportRuntime": true,
+      "bindings": false
     }
   },
-  "entry": [
+  "entries": [
     "assembly/contracts/Vault.ts",
+    "assembly/contracts/SimpleDEX.ts",
     "assembly/contracts/PriceOracle.ts",
-    "assembly/contracts/StrategyEngine.ts",
-    "assembly/contracts/TradeExecutor.ts",
     "assembly/contracts/Governance.ts",
-    "assembly/contracts/SimpleDEX.ts"
-  ],
-  "options": {
-    "bindings": "esm",
-    "importMemory": false,
-    "exportRuntime": false
-  }
+    "assembly/contracts/StrategyEngine.ts",
+    "assembly/contracts/TradeExecutor.ts"
+  ]
 }
