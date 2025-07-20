@@ -27,24 +27,21 @@ export function useVault(provider: massa.JsonRpcProvider, addresses: Record<stri
       const vaultContract = new massa.SmartContract(provider, addresses.vault);
       const userAddress = provider.address;
 
-      const [totalAssetsResult, totalSharesResult, userSharesResult, sharePriceResult] = await Promise.all([
+      const [totalAssetsResult, userSharesResult] = await Promise.all([
         vaultContract.read('totalAssets'),
-        vaultContract.read('totalShares'),
-        vaultContract.read('balanceOfShares', new massa.Args().addString(userAddress)),
-        vaultContract.read('sharePrice')
+        vaultContract.read('balanceOf', new massa.Args().addString(userAddress).serialize())
       ]);
 
-      const totalAssets = new massa.Args(totalAssetsResult.value).nextU128().unwrap();
-      const totalShares = new massa.Args(totalSharesResult.value).nextU128().unwrap();
-      const userShares = new massa.Args(userSharesResult.value).nextU128().unwrap();
-      const sharePrice = new massa.Args(sharePriceResult.value).nextU64().unwrap();
+      const totalAssets = new massa.Args(totalAssetsResult.value).nextU64();
+      const userShares = new massa.Args(userSharesResult.value).nextU64();
 
       let twap = 0;
       if (addresses.oracle) {
         try {
           const oracleContract = new massa.SmartContract(provider, addresses.oracle);
           const twapResult = await oracleContract.read('getTwap');
-          twap = new massa.Args(twapResult.value).nextU64().unwrap() / 1_000_000;
+          const twapValue = new massa.Args(twapResult.value).nextU64();
+          twap = Number(twapValue) / 1_000_000;
         } catch (error) {
           console.error('Failed to fetch TWAP:', error);
         }
@@ -53,9 +50,9 @@ export function useVault(provider: massa.JsonRpcProvider, addresses: Record<stri
       setData(prev => ({
         ...prev,
         totalAssets: totalAssets.toString(),
-        totalShares: totalShares.toString(),
+        totalShares: totalAssets.toString(),
         userShares: userShares.toString(),
-        sharePrice: sharePrice / 1_000_000,
+        sharePrice: 1,
         twap
       }));
     } catch (error) {

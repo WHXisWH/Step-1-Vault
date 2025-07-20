@@ -3,8 +3,7 @@ import * as massa from "@massalabs/massa-web3";
 import { getWallets } from "@massalabs/wallet-provider";
 
 interface WithdrawModalProps {
-  rpcUrl: string;
-  publicApi: string;
+  provider: massa.JsonRpcProvider;
   vaultAddress: string;
   userShares: string;
   sharePrice: number;
@@ -13,8 +12,7 @@ interface WithdrawModalProps {
 }
 
 export default function WithdrawModal({
-  rpcUrl,
-  publicApi,
+  provider,
   vaultAddress,
   userShares,
   sharePrice,
@@ -39,24 +37,36 @@ export default function WithdrawModal({
     }
     setLoading(true);
     setError("");
+    
     try {
-      const client = await massa.ClientFactory.createDefaultClient(rpcUrl, publicApi);
-      const wallet = (await getWallets())[0];
+      const wallets = await getWallets();
+      if (wallets.length === 0) {
+        throw new Error("No wallet found");
+      }
+
+      const wallet = wallets[0];
       await wallet.connect();
-      wallet.setClient(client);
+      
+      const accounts = await wallet.accounts();
+      if (accounts.length === 0) {
+        throw new Error("No accounts found");
+      }
+
+      const account = accounts[0];
       const withdrawShares = BigInt(Math.floor(parseFloat(shares) * 1_000_000));
-      const opId = await client
-        .smartContracts()
-        .callSmartContract(
-          wallet,
-          vaultAddress,
-          "withdraw",
-          new massa.Args().addU64(withdrawShares),
-          0n,
-          0n,
-          1_000_000n
-        );
-      await client.publicApi().waitForOperation(opId, 3, 120_000);
+      
+      const operation = await account.callSC({
+        target: vaultAddress,
+        func: "withdraw",
+        parameter: new massa.Args().addU64(withdrawShares).serialize()
+      });
+
+      const status = await operation.waitSpeculativeExecution();
+      
+      if (status !== massa.OperationStatus.SpeculativeSuccess) {
+        throw new Error("Transaction failed");
+      }
+      
       onSuccess();
     } catch (e: any) {
       setError(e?.message ?? "Withdrawal failed");
@@ -68,21 +78,46 @@ export default function WithdrawModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Withdraw from Vault</h3>
+        <div className="modal-header">
+          <h3 className="modal-title">Withdraw from Vault</h3>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        
         {error && <div className="error-message">{error}</div>}
-        <label>
-          Shares to Withdraw
-          <button onClick={() => setShares(maxShares.toString())}>MAX</button>
-        </label>
-        <input
-          type="number"
-          value={shares}
-          onChange={(e) => setShares(e.target.value)}
-          disabled={loading}
-        />
-        <div>~{estimatedMAS} MAS</div>
-        <button onClick={handleWithdraw} disabled={loading || !shares}>
-          {loading ? "Pending…" : "Withdraw"}
+        
+        <div className="input-group">
+          <label>
+            Shares to Withdraw
+            <button 
+              className="btn btn-secondary" 
+              style={{ marginLeft: '10px', padding: '4px 8px', fontSize: '12px' }}
+              onClick={() => setShares(maxShares.toString())}
+            >
+              MAX
+            </button>
+          </label>
+          <input
+            type="number"
+            min="0"
+            max={maxShares}
+            step="0.000001"
+            value={shares}
+            onChange={(e) => setShares(e.target.value)}
+            disabled={loading}
+            placeholder={`Max: ${maxShares} shares`}
+          />
+        </div>
+        
+        <div style={{ marginBottom: '20px', color: 'var(--text-secondary)' }}>
+          Estimated return: ~{estimatedMAS} MAS
+        </div>
+        
+        <button 
+          className="btn btn-primary" 
+          onClick={handleWithdraw} 
+          disabled={loading || !shares}
+        >
+          {loading ? "Processing..." : "Withdraw"}
         </button>
       </div>
     </div>

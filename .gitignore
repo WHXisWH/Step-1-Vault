@@ -14,7 +14,6 @@ dist/
 .env.*.local
 
 # Deployment artifacts
-addresses.json
 deployment-*.json
 
 # IDE

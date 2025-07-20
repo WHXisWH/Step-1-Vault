@@ -45,11 +45,14 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
         isFinal: true
       });
 
-      const priceEvents = events.filter(e => e.data.startsWith('PriceUpdate:'));
-      const strategyEvents = await provider.getEvents({
+      const priceEvents = events.filter(e => 
+        e.data && e.data.includes && e.data.includes('Price updated')
+      );
+      
+      const strategyEvents = addresses.strategy ? await provider.getEvents({
         smartContractAddress: addresses.strategy,
         isFinal: true
-      });
+      }) : [];
 
       processEvents(priceEvents, strategyEvents);
     } catch (error) {
@@ -60,11 +63,12 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
   const startEventPolling = () => {
     const onData = (events: massa.SCEvent[]) => {
       const priceEvents = events.filter(e => 
-        e.data.startsWith('PriceUpdate:') && 
+        e.data && e.data.includes && e.data.includes('Price updated') && 
         e.context.callee === addresses.oracle
       );
+      
       const strategyEvents = events.filter(e => 
-        e.data.startsWith('StrategyExecuted:') && 
+        e.data && e.data.includes && e.data.includes('Strategy executed') && 
         e.context.callee === addresses.strategy
       );
 
@@ -77,45 +81,67 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
       console.error('Event polling error:', error);
     };
 
-    pollerRef.current = massa.EventPoller.start(
-      provider,
-      { smartContractAddress: addresses.oracle },
-      onData,
-      onError,
-      5000
-    );
+    try {
+      pollerRef.current = massa.EventPoller.start(
+        provider,
+        { smartContractAddress: addresses.oracle },
+        onData,
+        onError,
+        5000
+      );
+    } catch (error) {
+      console.error('Failed to start event polling:', error);
+    }
   };
 
-  const processEvents = (priceEvents: massa.SCEvent[], strategyEvents: massa.SCEvent[]) => {
+  const processEvents = async (priceEvents: massa.SCEvent[], strategyEvents: massa.SCEvent[]) => {
     const newData = { ...chartData };
 
-    priceEvents.forEach(event => {
-      const parts = event.data.split(':')[1].split(',');
-      const price = parseFloat(parts.find(p => p.startsWith('twap='))?.split('=')[1] || '0') / 1_000_000;
-      const timestamp = new Date(parseInt(parts.find(p => p.startsWith('timestamp='))?.split('=')[1] || '0')).toLocaleTimeString();
+    for (const event of priceEvents) {
+      try {
+        if (!addresses.oracle) continue;
+        
+        const oracleContract = new massa.SmartContract(provider, addresses.oracle);
+        const priceResult = await oracleContract.read('getPrice');
+        const priceValue = new massa.Args(priceResult.value).nextU64();
+        const price = Number(priceValue) / 1_000_000;
+        const timestamp = new Date().toLocaleTimeString();
 
-      if (newData.time.length > 50) {
-        newData.time.shift();
-        newData.prices.shift();
+        if (newData.time.length > 50) {
+          newData.time.shift();
+          newData.prices.shift();
+        }
+
+        newData.time.push(timestamp);
+        newData.prices.push(price);
+      } catch (error) {
+        console.error('Failed to process price event:', error);
       }
+    }
 
-      newData.time.push(timestamp);
-      newData.prices.push(price);
-    });
+    for (const event of strategyEvents) {
+      try {
+        if (!addresses.oracle) continue;
+        
+        const oracleContract = new massa.SmartContract(provider, addresses.oracle);
+        const priceResult = await oracleContract.read('getPrice');
+        const priceValue = new massa.Args(priceResult.value).nextU64();
+        const price = Number(priceValue) / 1_000_000;
+        const timestamp = new Date().toLocaleTimeString();
 
-    strategyEvents.forEach(event => {
-      const parts = event.data.split(':')[1].split(',');
-      const action = parts.find(p => p.startsWith('action='))?.split('=')[1] || '';
-      const price = parseFloat(parts.find(p => p.startsWith('twap='))?.split('=')[1] || '0') / 1_000_000;
-      const timestamp = new Date(parseInt(parts.find(p => p.startsWith('timestamp='))?.split('=')[1] || '0')).toLocaleTimeString();
-
-      if (action !== 'hold') {
-        newData.actions.push({ time: timestamp, action, value: price });
+        newData.actions.push({ 
+          time: timestamp, 
+          action: 'rebalance', 
+          value: price 
+        });
+        
         if (newData.actions.length > 20) {
           newData.actions.shift();
         }
+      } catch (error) {
+        console.error('Failed to process strategy event:', error);
       }
-    });
+    }
 
     setChartData(newData);
   };

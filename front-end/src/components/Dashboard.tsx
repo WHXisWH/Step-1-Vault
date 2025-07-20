@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as massa from "@massalabs/massa-web3";
-import * as wallet from "@massalabs/wallet-provider";
+import { getWallets } from "@massalabs/wallet-provider";
 import DepositModal from "./DepositModal";
 import WithdrawModal from "./WithdrawModal";
 import StrategyChart from "./StrategyChart";
@@ -27,33 +27,37 @@ export default function Dashboard({ provider, addresses }: DashboardProps) {
     if (!addresses.strategy) return;
     setBusy(true);
     try {
-      const wallets = await wallet.getWallets();
+      const wallets = await getWallets();
+      if (wallets.length === 0) {
+        throw new Error("No wallet found");
+      }
+      
       const selectedWallet = wallets[0];
       await selectedWallet.connect();
       
       const accounts = await selectedWallet.accounts();
+      if (accounts.length === 0) {
+        throw new Error("No accounts found");
+      }
+      
       const account = accounts[0];
-
       const fn = running ? "stopStrategy" : "startStrategy";
-      const opId = await account.callSC({
-          targetAddress: addresses.strategy,
-          functionName: fn,
-          parameter: new massa.Args().serialize(),
-          coins: 0n,
-          fee: 1000000n,
-          maxGas: 1000000n,
+      
+      const operation = await account.callSC({
+        target: addresses.strategy,
+        func: fn,
+        parameter: new massa.Args().serialize()
       });
 
-      // This part requires a client, which we get from the provider
-      const client = new massa.Client({
-          providers: [provider],
-          periodOffset: null,
-      });
-
-      await client.smartContracts().awaitRequiredOperationConfirmation(opId);
+      const status = await operation.waitSpeculativeExecution();
+      
+      if (status !== massa.OperationStatus.SpeculativeSuccess) {
+        throw new Error("Strategy toggle failed");
+      }
+      
       setRunning(!running);
-    } catch {
-      /* silent */
+    } catch (error) {
+      console.error('Strategy toggle failed:', error);
     } finally {
       setBusy(false);
     }
@@ -64,22 +68,40 @@ export default function Dashboard({ provider, addresses }: DashboardProps) {
       <div className="container">
         <div className="stats">
           <div className="stat-card">
-            <div>Total Value Locked</div>
-            <div>{Number(vault.totalAssets) / 1_000_000} MAS</div>
+            <div className="stat-label">Total Value Locked</div>
+            <div className="stat-value">{Number(vault.totalAssets) / 1_000_000} MAS</div>
           </div>
           <div className="stat-card">
-            <div>Your Balance</div>
-            <div>{Number(vault.userShares) / 1_000_000} shares</div>
+            <div className="stat-label">Your Balance</div>
+            <div className="stat-value">{Number(vault.userShares) / 1_000_000} shares</div>
           </div>
         </div>
-        <button onClick={() => setShowDeposit(true)}>Deposit</button>
-        <button onClick={() => setShowWithdraw(true)} disabled={vault.userShares === "0"}>
-          Withdraw
-        </button>
-        <button onClick={toggleStrategy} disabled={busy}>
-          {busy ? "..." : running ? "Stop Strategy" : "Start Strategy"}
-        </button>
-        <StrategyChart provider={provider} addresses={addresses} isActive={running} />
+        
+        <div className="action-buttons">
+          <button className="btn btn-primary" onClick={() => setShowDeposit(true)}>
+            Deposit
+          </button>
+          <button 
+            className="btn btn-secondary" 
+            onClick={() => setShowWithdraw(true)} 
+            disabled={vault.userShares === "0"}
+          >
+            Withdraw
+          </button>
+          <button 
+            className="btn btn-primary" 
+            onClick={toggleStrategy} 
+            disabled={busy}
+          >
+            {busy ? "..." : running ? "Stop Strategy" : "Start Strategy"}
+          </button>
+        </div>
+
+        <div className="section">
+          <div className="section-title">Strategy Performance</div>
+          <StrategyChart provider={provider} addresses={addresses} isActive={running} />
+        </div>
+
         {showDeposit && (
           <DepositModal
             provider={provider}

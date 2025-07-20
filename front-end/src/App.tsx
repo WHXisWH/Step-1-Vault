@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import * as massa from '@massalabs/massa-web3';
-import * as wallet from '@massalabs/wallet-provider';
+import { getWallets } from '@massalabs/wallet-provider';
 import Dashboard from './components/Dashboard';
 import { loadAddresses } from './utils/massa';
 
 interface AppState {
   provider: massa.JsonRpcProvider | null;
   account: massa.Account | null;
-  wallet: wallet.Wallet | null;
+  wallet: any;
   addresses: Record<string, string>;
   balance: string;
   isConnected: boolean;
@@ -48,7 +48,7 @@ function App() {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      const wallets = await wallet.getWallets();
+      const wallets = await getWallets();
       
       if (wallets.length === 0) {
         throw new Error('No wallet found. Please install MassaStation or Bearby.');
@@ -66,7 +66,7 @@ function App() {
         throw new Error('No accounts found in wallet');
       }
       
-      const provider = accounts[0] as massa.JsonRpcProvider;
+      const provider = accounts[0];
       const balance = await provider.balance(true);
       
       setState(prev => ({
@@ -82,22 +82,26 @@ function App() {
       console.error('Wallet connection error:', error);
       
       try {
-        const account = await massa.Account.fromEnv();
-        const provider = massa.JsonRpcProvider.buildnet(account);
-        const balance = await provider.balance(true);
-        
-        setState(prev => ({
-          ...prev,
-          provider,
-          account,
-          balance: massa.Mas.toString(balance),
-          isConnected: true,
-          isLoading: false
-        }));
+        if (process.env.NODE_ENV === 'development' && import.meta.env.VITE_PRIVATE_KEY) {
+          const account = await massa.Account.fromEnv();
+          const provider = massa.JsonRpcProvider.buildnet(account);
+          const balance = await provider.balance(true);
+          
+          setState(prev => ({
+            ...prev,
+            provider,
+            account,
+            balance: massa.Mas.toString(balance),
+            isConnected: true,
+            isLoading: false
+          }));
+        } else {
+          throw new Error('No wallet found and no private key configured');
+        }
       } catch (envError) {
         setState(prev => ({
           ...prev,
-          error: 'Failed to connect wallet. Please check your setup.',
+          error: 'Failed to connect wallet. Please install a wallet or configure private key.',
           isLoading: false
         }));
       }

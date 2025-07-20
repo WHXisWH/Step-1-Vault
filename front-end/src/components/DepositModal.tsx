@@ -3,22 +3,14 @@ import * as massa from "@massalabs/massa-web3";
 import { getWallets } from "@massalabs/wallet-provider";
 
 interface DepositModalProps {
-  rpcUrl: string;
-  publicApi: string;
+  provider: massa.JsonRpcProvider;
   vaultAddress: string;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-const masToUMas = (v: string): bigint => {
-  const [w, f = ""] = v.split(".");
-  const frac = (f + "000000000").slice(0, 9);
-  return BigInt(w || "0") * 10n ** 9n + BigInt(frac);
-};
-
 export default function DepositModal({
-  rpcUrl,
-  publicApi,
+  provider,
   vaultAddress,
   onClose,
   onSuccess
@@ -34,24 +26,41 @@ export default function DepositModal({
     }
     setLoading(true);
     setError("");
+    
     try {
-      const client = await massa.ClientFactory.createDefaultClient(rpcUrl, publicApi);
-      const wallet = (await getWallets())[0];
+      const wallets = await getWallets();
+      if (wallets.length === 0) {
+        throw new Error("No wallet found");
+      }
+
+      const wallet = wallets[0];
       await wallet.connect();
-      wallet.setClient(client);
-      const coins = masToUMas(amount);
-      const opId = await client
-        .smartContracts()
-        .callSmartContract(
-          wallet,
-          vaultAddress,
-          "deposit",
-          new massa.Args().addU64(coins),
-          coins,
-          0n,
-          1_000_000n
-        );
-      await client.publicApi().waitForOperation(opId, 3, 120_000);
+      
+      const accounts = await wallet.accounts();
+      if (accounts.length === 0) {
+        throw new Error("No accounts found");
+      }
+
+      const account = accounts[0];
+      const coins = massa.Mas.fromString(amount);
+      
+      console.log("Calling contract:", { vaultAddress, coins: massa.Mas.toString(coins) });
+      
+      const operation = await account.callSC({
+        target: vaultAddress,
+        func: "deposit",
+        parameter: new massa.Args().serialize(),
+        coins: coins
+      });
+
+      console.log("Operation result:", operation);
+
+      const status = await operation.waitSpeculativeExecution();
+      
+      if (status !== massa.OperationStatus.SpeculativeSuccess) {
+        throw new Error("Transaction failed");
+      }
+      
       onSuccess();
     } catch (e: any) {
       setError(e?.message ?? "Deposit failed");
@@ -63,18 +72,32 @@ export default function DepositModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Deposit MAS</h3>
-        {error && <div className="error">{error}</div>}
-        <input
-          type="number"
-          min="0"
-          step="0.000000001"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          disabled={loading}
-        />
-        <button onClick={handleDeposit} disabled={loading || !amount}>
-          {loading ? "Pending…" : "Deposit"}
+        <div className="modal-header">
+          <h3 className="modal-title">Deposit MAS</h3>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+        
+        {error && <div className="error-message">{error}</div>}
+        
+        <div className="input-group">
+          <label>Amount (MAS)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.000000001"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            disabled={loading}
+            placeholder="Enter amount to deposit"
+          />
+        </div>
+        
+        <button 
+          className="btn btn-primary" 
+          onClick={handleDeposit} 
+          disabled={loading || !amount}
+        >
+          {loading ? "Processing..." : "Deposit"}
         </button>
       </div>
     </div>
