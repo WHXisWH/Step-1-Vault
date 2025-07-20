@@ -1,9 +1,9 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as massa from '@massalabs/massa-web3';
 
 interface StrategyChartProps {
-  provider: massa.JsonRpcProvider;
+  provider: any;
   addresses: Record<string, string>;
   isActive: boolean;
 }
@@ -12,6 +12,15 @@ interface ChartData {
   time: string[];
   prices: number[];
   actions: { time: string; action: string; value: number }[];
+}
+
+// 定义事件类型避免导入问题
+interface SCEvent {
+  data: string;
+  context: {
+    callee: string;
+    [key: string]: any;
+  };
 }
 
 function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
@@ -45,7 +54,7 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
         isFinal: true
       });
 
-      const priceEvents = events.filter(e => 
+      const priceEvents = events.filter((e: SCEvent) => 
         e.data && e.data.includes && e.data.includes('Price updated')
       );
       
@@ -61,13 +70,13 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
   };
 
   const startEventPolling = () => {
-    const onData = (events: massa.SCEvent[]) => {
-      const priceEvents = events.filter(e => 
+    const onData = (events: SCEvent[]) => {
+      const priceEvents = events.filter((e: SCEvent) => 
         e.data && e.data.includes && e.data.includes('Price updated') && 
         e.context.callee === addresses.oracle
       );
       
-      const strategyEvents = events.filter(e => 
+      const strategyEvents = events.filter((e: SCEvent) => 
         e.data && e.data.includes && e.data.includes('Strategy executed') && 
         e.context.callee === addresses.strategy
       );
@@ -82,7 +91,8 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
     };
 
     try {
-      pollerRef.current = massa.EventPoller.start(
+      // 使用类型断言避免 EventPoller 类型问题
+      pollerRef.current = (massa as any).EventPoller?.start(
         provider,
         { smartContractAddress: addresses.oracle },
         onData,
@@ -94,10 +104,10 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
     }
   };
 
-  const processEvents = async (priceEvents: massa.SCEvent[], strategyEvents: massa.SCEvent[]) => {
+  const processEvents = async (priceEvents: SCEvent[], strategyEvents: SCEvent[]) => {
     const newData = { ...chartData };
 
-    for (const event of priceEvents) {
+    for (const _event of priceEvents) {
       try {
         if (!addresses.oracle) continue;
         
@@ -119,7 +129,7 @@ function StrategyChart({ provider, addresses, isActive }: StrategyChartProps) {
       }
     }
 
-    for (const event of strategyEvents) {
+    for (const _event of strategyEvents) {
       try {
         if (!addresses.oracle) continue;
         
