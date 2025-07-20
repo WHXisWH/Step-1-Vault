@@ -1,73 +1,188 @@
-export async function loadAddresses(): Promise<Record<string, string>> {
+import { useState, useEffect } from 'react';
+import * as massa from '@massalabs/massa-web3';
+import { getWallets } from '@massalabs/wallet-provider';
+import Dashboard from './components/Dashboard';
+import { loadAddresses } from './utils/massa';
 
-  const envAddresses = {
-    vault: import.meta.env.VITE_VAULT_ADDRESS || '',
-    oracle: import.meta.env.VITE_ORACLE_ADDRESS || '',
-    strategy: import.meta.env.VITE_STRATEGY_ADDRESS || '',
-    executor: import.meta.env.VITE_EXECUTOR_ADDRESS || '',
-    governance: import.meta.env.VITE_GOVERNANCE_ADDRESS || '',
-    dex: import.meta.env.VITE_DEX_ADDRESS || ''
+interface AppState {
+  provider: any | null;
+  account: massa.Account | null;
+  wallet: any;
+  addresses: Record<string, string>;
+  balance: string;
+  isConnected: boolean;
+  isLoading: boolean;
+  error: string | null;
+}
+
+function App() {
+  const [state, setState] = useState<AppState>({
+    provider: null,
+    account: null,
+    wallet: null,
+    addresses: {},
+    balance: '0',
+    isConnected: false,
+    isLoading: true,
+    error: null
+  });
+
+  useEffect(() => {
+    initializeApp();
+  }, []);
+
+  const initializeApp = async () => {
+    try {
+      const addresses = await loadAddresses();
+      setState(prev => ({ ...prev, addresses, isLoading: false }));
+    } catch (error) {
+      setState(prev => ({ 
+        ...prev, 
+        error: 'Failed to load contract addresses', 
+        isLoading: false 
+      }));
+    }
   };
 
-
-  const hasEnvAddresses = Object.values(envAddresses).some(addr => addr !== '');
-  if (hasEnvAddresses) {
-    console.log('Loading addresses from environment variables');
-    return envAddresses;
-  }
-
-
-  try {
-    const response = await fetch('/addresses.json');
-    if (!response.ok) {
-      console.warn('addresses.json not found, using empty addresses');
-      return envAddresses;
+  const connectWallet = async () => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    
+    try {
+      const wallets = await getWallets();
+      
+      if (wallets.length === 0) {
+        throw new Error('No wallet found. Please install MassaStation or Bearby.');
+      }
+      
+      const selectedWallet = wallets[0];
+      const connected = await selectedWallet.connect();
+      
+      if (!connected) {
+        throw new Error('Failed to connect to wallet');
+      }
+      
+      const accounts = await selectedWallet.accounts();
+      if (accounts.length === 0) {
+        throw new Error('No accounts found in wallet');
+      }
+      
+      const provider = accounts[0];
+      const balance = await provider.balance(true);
+      
+      setState(prev => ({
+        ...prev,
+        provider,
+        wallet: selectedWallet,
+        balance: massa.Mas.toString(balance),
+        isConnected: true,
+        isLoading: false
+      }));
+      
+    } catch (error) {
+      console.error('Wallet connection error:', error);
+      
+      try {
+        if (process.env.NODE_ENV === 'development' && (import.meta as any).env?.VITE_PRIVATE_KEY) {
+          const account = await massa.Account.fromEnv();
+          const provider = massa.JsonRpcProvider.buildnet(account);
+          const balance = await provider.balance(true);
+          
+          setState(prev => ({
+            ...prev,
+            provider,
+            account,
+            balance: massa.Mas.toString(balance),
+            isConnected: true,
+            isLoading: false
+          }));
+        } else {
+          throw new Error('No wallet found and no private key configured');
+        }
+      } catch (envError) {
+        setState(prev => ({
+          ...prev,
+          error: 'Failed to connect wallet. Please install a wallet or configure private key.',
+          isLoading: false
+        }));
+      }
     }
-    const fileAddresses = await response.json();
-    console.log('Loading addresses from addresses.json');
-    return fileAddresses;
-  } catch (error) {
-    console.error('Failed to load addresses:', error);
-    return envAddresses;
-  }
+  };
+
+  const disconnectWallet = async () => {
+    if (state.wallet) {
+      await state.wallet.disconnect();
+    }
+    
+    setState(prev => ({
+      ...prev,
+      provider: null,
+      account: null,
+      wallet: null,
+      balance: '0',
+      isConnected: false
+    }));
+  };
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="container">
+          <nav className="nav">
+            <div className="logo">Step-1 Vault</div>
+            <div className="wallet-info">
+              {state.isConnected && (
+                <div className="balance">
+                  Balance: {state.balance} MAS
+                </div>
+              )}
+              <button
+                className={`btn ${state.isConnected ? 'btn-secondary' : 'btn-primary'}`}
+                onClick={state.isConnected ? disconnectWallet : connectWallet}
+                disabled={state.isLoading}
+              >
+                {state.isLoading ? (
+                  <span className="loading-spinner"></span>
+                ) : state.isConnected ? (
+                  'Disconnect'
+                ) : (
+                  'Connect Wallet'
+                )}
+              </button>
+            </div>
+          </nav>
+        </div>
+      </header>
+
+      <main>
+        {!state.isConnected ? (
+          <div className="hero">
+            <div className="container">
+              <h1>Autonomous DeFi on Massa</h1>
+              <p>
+                Experience the future of decentralized finance with self-running strategies, 
+                on-chain execution, and unstoppable frontend hosting.
+              </p>
+              {state.error && (
+                <div className="error-message">{state.error}</div>
+              )}
+              <button 
+                className="btn btn-primary" 
+                onClick={connectWallet}
+                disabled={state.isLoading}
+              >
+                {state.isLoading ? 'Loading...' : 'Get Started'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <Dashboard 
+            provider={state.provider} 
+            addresses={state.addresses}
+          />
+        )}
+      </main>
+    </div>
+  );
 }
 
-export function formatAddress(address: string): string {
-  if (!address || address.length < 10) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-export function formatAmount(amount: bigint | string, decimals: number = 6): string {
-  const value = typeof amount === 'string' ? BigInt(amount) : amount;
-  const divisor = BigInt(10 ** decimals);
-  const whole = value / divisor;
-  const remainder = value % divisor;
-  
-  if (remainder === 0n) {
-    return whole.toString();
-  }
-  
-  const decimal = remainder.toString().padStart(decimals, '0');
-  const trimmed = decimal.replace(/0+$/, '');
-  
-  return `${whole}.${trimmed}`;
-}
-
-export function parseAmount(amount: string, decimals: number = 6): bigint {
-  const [whole, decimal = ''] = amount.split('.');
-  const paddedDecimal = decimal.padEnd(decimals, '0').slice(0, decimals);
-  return BigInt(whole + paddedDecimal);
-}
-
-export function calculateAPY(
-  currentPrice: number, 
-  initialPrice: number, 
-  daysElapsed: number
-): number {
-  if (initialPrice === 0 || daysElapsed === 0) return 0;
-  
-  const totalReturn = (currentPrice - initialPrice) / initialPrice;
-  const annualizedReturn = totalReturn * (365 / daysElapsed);
-  
-  return annualizedReturn * 100;
-}
+export default App;
