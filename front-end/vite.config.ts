@@ -8,7 +8,8 @@ export default defineConfig({
     include: [
         "echarts-for-react", 
         "echarts", 
-        "@massalabs/massa-web3"
+        "@massalabs/massa-web3",
+        "@massalabs/wallet-provider"
     ],
     esbuildOptions: { 
       target: "es2020"
@@ -20,11 +21,31 @@ export default defineConfig({
     outDir: "dist",
     sourcemap: true,
     commonjsOptions: {
-      // <-- 添加这个配置
       transformMixedEsModules: true,
+    },
+    rollupOptions: {
+      external: [],
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          massa: ['@massalabs/massa-web3', '@massalabs/wallet-provider'],
+          charts: ['echarts', 'echarts-for-react']
+        }
+      }
     }
   },
 
-  define: { "process.env": {} },
-  server: { port: 3000, open: true }
+  define: { 
+    "process.env": {},
+    global: "globalThis"
+  },
+  
+  server: { 
+    port: 3000, 
+    open: true 
+  },
+
+  preview: {
+    port: 3000
+  }
 });

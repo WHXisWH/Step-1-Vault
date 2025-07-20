@@ -1,21 +1,34 @@
 export async function loadAddresses(): Promise<Record<string, string>> {
+
+  const envAddresses = {
+    vault: import.meta.env.VITE_VAULT_ADDRESS || '',
+    oracle: import.meta.env.VITE_ORACLE_ADDRESS || '',
+    strategy: import.meta.env.VITE_STRATEGY_ADDRESS || '',
+    executor: import.meta.env.VITE_EXECUTOR_ADDRESS || '',
+    governance: import.meta.env.VITE_GOVERNANCE_ADDRESS || '',
+    dex: import.meta.env.VITE_DEX_ADDRESS || ''
+  };
+
+
+  const hasEnvAddresses = Object.values(envAddresses).some(addr => addr !== '');
+  if (hasEnvAddresses) {
+    console.log('Loading addresses from environment variables');
+    return envAddresses;
+  }
+
+
   try {
     const response = await fetch('/addresses.json');
     if (!response.ok) {
-      console.warn('addresses.json not found, using environment variables');
-      return {
-        vault: import.meta.env.VITE_VAULT_ADDRESS || '',
-        oracle: import.meta.env.VITE_ORACLE_ADDRESS || '',
-        strategy: import.meta.env.VITE_STRATEGY_ADDRESS || '',
-        executor: import.meta.env.VITE_EXECUTOR_ADDRESS || '',
-        governance: import.meta.env.VITE_GOVERNANCE_ADDRESS || '',
-        dex: import.meta.env.VITE_DEX_ADDRESS || ''
-      };
+      console.warn('addresses.json not found, using empty addresses');
+      return envAddresses;
     }
-    return await response.json();
+    const fileAddresses = await response.json();
+    console.log('Loading addresses from addresses.json');
+    return fileAddresses;
   } catch (error) {
     console.error('Failed to load addresses:', error);
-    return {};
+    return envAddresses;
   }
 }
 
