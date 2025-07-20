@@ -1,0 +1,26 @@
+{
+  "name": "step-1-vault",
+  "version": "1.0.0",
+  "description": "Pure‑On‑Chain Auto Quantitative Finance Protocol on Massa",
+  "author": "Step‑1 Team",
+  "license": "MIT",
+  "scripts": {
+    "build": "massa-sc-compiler",
+    "test": "asp --verbose",
+    "deploy": "ts-node scripts/deploy.ts",
+    "deploy:testnet": "NETWORK=testnet npm run deploy",
+    "interact": "ts-node scripts/interact.ts"
+  },
+  "devDependencies": {
+    "@as-pect/cli": "^8.1.0",
+    "@massalabs/massa-as-sdk": "3.0.2",
+    "@massalabs/massa-sc-compiler": "0.2.0",
+    "@massalabs/massa-web3": "^5.2.0",
+    "@types/node": "^20.10.0",
+    "as-bignum": "^0.2.0",
+    "assemblyscript": "0.27.32",
+    "dotenv": "^16.4.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }
+}
