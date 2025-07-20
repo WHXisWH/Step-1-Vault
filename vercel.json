@@ -1,31 +1,13 @@
 {
-  "name": "step-1-vault",
-  "version": 2,
-  "buildCommand": "cd front-end && npm install && npm run build",
-  "outputDirectory": "front-end/dist",
-  "installCommand": "cd front-end && npm install",
-  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
   "env": {
-    "VITE_VAULT_ADDRESS": "",
-    "VITE_ORACLE_ADDRESS": "",
-    "VITE_STRATEGY_ADDRESS": "",
-    "VITE_EXECUTOR_ADDRESS": "",
-    "VITE_GOVERNANCE_ADDRESS": "",
-    "VITE_DEX_ADDRESS": ""
-  },
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "Cross-Origin-Embedder-Policy",
-          "value": "credentialless"
-        },
-        {
-          "key": "Cross-Origin-Opener-Policy",
-          "value": "same-origin"
-        }
-      ]
-    }
-  ]
+    "VITE_VAULT_ADDRESS": "AS18xpWYhrNa67rvMVCxpuUFXHqkeNGXLEQ8hJPBMDBp8ARcsmBV",
+    "VITE_ORACLE_ADDRESS": "AS123GoWdWUgjSnVg1pqVUeodUK2swgXNXnMo4e62Sj6jKonXm32w",
+    "VITE_STRATEGY_ADDRESS": "AS1m8Ao7NZDthxNqyBuP4U5Qw9YPWTL5LncYLeHVZXae8jwGWFX2",
+    "VITE_EXECUTOR_ADDRESS": "AS1CYvPPaEjRWs3qVCjidUbHc79XAkJYrWzSPXjEtudgT5AhGUcD",
+    "VITE_GOVERNANCE_ADDRESS": "AS12HgrQe5gemQ2sxM6SkZvTCdvf5jezDCDvqkZdqJYuyTVUbKU52",
+    "VITE_DEX_ADDRESS": "AS1hr1BYRQSAeCDG24Xru7HZM4TQAe4hqTwnnjDN9AtTQLL93WMb"
+  }
 }
