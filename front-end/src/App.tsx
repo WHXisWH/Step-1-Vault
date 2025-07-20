@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import * as massa from '@massalabs/massa-web3';
 import { getWallets } from '@massalabs/wallet-provider';
 import Dashboard from './components/Dashboard';
 import { loadAddresses } from './utils/massa';
 
 interface AppState {
-  provider: massa.JsonRpcProvider | null;
+  provider: any | null;
   account: massa.Account | null;
   wallet: any;
   addresses: Record<string, string>;
@@ -82,7 +82,7 @@ function App() {
       console.error('Wallet connection error:', error);
       
       try {
-        if (process.env.NODE_ENV === 'development' && import.meta.env.VITE_PRIVATE_KEY) {
+        if (process.env.NODE_ENV === 'development' && (import.meta as any).env?.VITE_PRIVATE_KEY) {
           const account = await massa.Account.fromEnv();
           const provider = massa.JsonRpcProvider.buildnet(account);
           const balance = await provider.balance(true);
@@ -176,7 +176,7 @@ function App() {
           </div>
         ) : (
           <Dashboard 
-            provider={state.provider!} 
+            provider={state.provider} 
             addresses={state.addresses}
           />
         )}
